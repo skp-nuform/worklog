@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# --- Worklog additions ---
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Supabase local stack
+/supabase/.temp/
+/supabase/.branches/
+
+# Local env (only .env.example is committed)
+.env
+.env*.local
+
+# Vitest
+/coverage/
+
+# Snapshots and external exports
+snapshot-*/
+
