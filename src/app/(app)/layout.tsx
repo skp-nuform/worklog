@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Shield } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme-toggle";
-
+import { ProfileMenu } from "@/components/shell/profile-menu";
 import { requireViewer } from "@/lib/auth/session";
 import { getCurrentWorkspace, getProfile } from "@/lib/data/workspace";
 
@@ -16,6 +17,24 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   // No workspace yet: onboarding is the only sensible destination.
   if (!workspace) redirect("/onboarding");
+
+  // Deactivated member check
+  if (workspace.status === "removed") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-canvas p-6 text-center animate-page-in">
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive mb-4">
+          <Shield className="size-7" />
+        </div>
+        <h1 className="text-xl font-bold text-text">Access Suspended</h1>
+        <p className="mt-2 text-sm text-text-muted max-w-sm">
+          Your Nuform Worklog access is no longer active. Please contact your workspace administrator to restore access.
+        </p>
+        <div className="mt-6">
+          <ProfileMenu profile={profile} workspaceRole={workspace.role} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-canvas flex min-h-full flex-col">
@@ -52,10 +71,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
           <ThemeToggle />
 
-          <div className="border-border hidden items-center border-l pl-3 sm:flex">
-            <p className="text-text-muted max-w-[160px] truncate text-xs">
-              {profile?.display_name || "Abhishek"}
-            </p>
+          <div className="border-border flex items-center border-l pl-3">
+            <ProfileMenu profile={profile} workspaceRole={workspace.role} />
           </div>
         </div>
       </header>

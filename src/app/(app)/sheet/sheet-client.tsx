@@ -16,6 +16,7 @@ import { TargetDialog } from "@/components/sheet/target-dialog";
 import { WeekStrip } from "@/components/sheet/week-strip";
 import { Button } from "@/components/ui/button";
 import { deleteEntry } from "@/features/sheet/actions";
+import { updateTargetStatus } from "@/features/target/actions";
 
 export function SheetClient({
   workspaceId,
@@ -148,6 +149,21 @@ export function SheetClient({
         return;
       }
       toast.success("Target removed");
+      router.refresh();
+    });
+  }
+
+  function handleTargetStatusChange(
+    targetId: string,
+    status: "upcoming" | "in_progress" | "done" | "missed",
+  ) {
+    startTransition(async () => {
+      const result = await updateTargetStatus({ targetId, status });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Target marked ${status.replace("_", " ")}`);
       router.refresh();
     });
   }
@@ -312,40 +328,15 @@ export function SheetClient({
             showAuthors={showAuthors}
             allowDownload
             defaultAuthor="Abhishek"
-            actions={(entry) => {
-              const isAuthor = entry.author_id === viewerId;
-              const isAdmin = viewerRole === "owner" || viewerRole === "admin";
-              const canEdit = isAuthor || isAdmin;
-
-              if (!canEdit) return null;
-
-              return (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditingEntry(
-                        entry as SheetEntry & { version: number; work_date?: string },
-                      )
-                    }
-                    aria-label={`Edit ${entry.title}`}
-                    className="text-text-muted hover:text-text focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none cursor-pointer"
-                    title={isAdmin && !isAuthor ? "Admin: Edit entry" : "Edit entry"}
-                  >
-                    <Pencil aria-hidden="true" className="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(entry)}
-                    aria-label={`Delete ${entry.title}`}
-                    className="text-text-muted hover:text-destructive focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none cursor-pointer"
-                    title={isAdmin && !isAuthor ? "Admin: Delete entry" : "Delete entry"}
-                  >
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                  </button>
-                </div>
-              );
-            }}
+            viewerId={viewerId}
+            viewerRole={viewerRole}
+            onEdit={(entry) =>
+              setEditingEntry(
+                entry as SheetEntry & { version: number; work_date?: string },
+              )
+            }
+            onDelete={(entry) => remove(entry)}
+            onStatusChange={handleTargetStatusChange}
             emptyState={
               hasActiveFilters ? (
                 <div className="border-frame flex flex-col items-start gap-3 border border-dashed px-6 py-12">

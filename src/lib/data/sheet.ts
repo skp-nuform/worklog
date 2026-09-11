@@ -140,6 +140,28 @@ export async function getPeople(workspaceId: string) {
   );
 }
 
+export async function getAllWorkspaceMembers(workspaceId: string) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("workspace_people")
+    .select("user_id, display_name, email, role, department, status, joined_at")
+    .eq("workspace_id", workspaceId)
+    .order("display_name");
+  return (
+    (data as
+      | {
+          user_id: string;
+          display_name: string;
+          email: string;
+          role: "owner" | "admin" | "member" | "guest";
+          department?: string | null;
+          status: "active" | "invited" | "removed";
+          joined_at?: string | null;
+        }[]
+      | null) ?? []
+  );
+}
+
 export async function getShareLinks(workspaceId: string) {
   const supabase = await createClient();
   const { data } = await supabase

@@ -151,3 +151,115 @@ export async function completeOnboarding(
 // Keep bootstrapWorkspace aliasing completeOnboarding for backward compatibility
 export const bootstrapWorkspace = completeOnboarding;
 
+/**
+ * Update member's department (Admin/Owner only).
+ */
+export async function updateMemberDepartment(input: {
+  workspaceId: string;
+  userId: string;
+  department: string;
+}): Promise<ActionResult> {
+  const { getCurrentWorkspace } = await import("@/lib/data/workspace");
+  await requireViewer();
+  const ws = await getCurrentWorkspace();
+  if (!ws || (ws.role !== "owner" && ws.role !== "admin")) {
+    return { ok: false, error: "Only admins can change team member departments." };
+  }
+
+  const dept = input.department.trim();
+  if (!dept) {
+    return { ok: false, error: "Department cannot be empty." };
+  }
+
+  try {
+    const service = createServiceClient();
+    await service
+      .schema("app")
+      .from("profiles")
+      .update({ department: dept, updated_at: new Date().toISOString() })
+      .eq("id", input.userId);
+
+    revalidatePath("/settings/team");
+    revalidatePath("/sheet");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to update department." };
+  }
+}
+
+/**
+ * Update member's workspace role (Admin/Owner only).
+ */
+export async function updateMemberRole(input: {
+  workspaceId: string;
+  userId: string;
+  role: "admin" | "member" | "guest";
+}): Promise<ActionResult> {
+  const { getCurrentWorkspace } = await import("@/lib/data/workspace");
+  await requireViewer();
+  const ws = await getCurrentWorkspace();
+  if (!ws || (ws.role !== "owner" && ws.role !== "admin")) {
+    return { ok: false, error: "Only admins can change member roles." };
+  }
+
+  if (ws.owner_id === input.userId) {
+    return { ok: false, error: "The workspace owner's role cannot be modified." };
+  }
+
+  try {
+    const service = createServiceClient();
+    await service
+      .schema("app")
+      .from("workspace_members")
+      .update({ role: input.role })
+      .eq("workspace_id", input.workspaceId)
+      .eq("user_id", input.userId);
+
+    revalidatePath("/settings/team");
+    revalidatePath("/sheet");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to update role." };
+  }
+}
+
+/**
+ * Activate or deactivate member access (Admin/Owner only).
+ */
+export async function setMemberStatus(input: {
+  workspaceId: string;
+  userId: string;
+  status: "active" | "removed";
+}): Promise<ActionResult> {
+  const { getCurrentWorkspace } = await import("@/lib/data/workspace");
+  const viewer = await requireViewer();
+  const ws = await getCurrentWorkspace();
+  if (!ws || (ws.role !== "owner" && ws.role !== "admin")) {
+    return { ok: false, error: "Only admins can modify member access status." };
+  }
+
+  if (input.userId === viewer.id) {
+    return { ok: false, error: "You cannot deactivate your own access." };
+  }
+
+  if (ws.owner_id === input.userId) {
+    return { ok: false, error: "The workspace owner cannot be deactivated." };
+  }
+
+  try {
+    const service = createServiceClient();
+    await service
+      .schema("app")
+      .from("workspace_members")
+      .update({ status: input.status })
+      .eq("workspace_id", input.workspaceId)
+      .eq("user_id", input.userId);
+
+    revalidatePath("/settings/team");
+    revalidatePath("/sheet");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Failed to update status." };
+  }
+}
+

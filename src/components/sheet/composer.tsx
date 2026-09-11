@@ -446,30 +446,44 @@ export function Composer({
         </ul>
       )}
 
-      {/* Add a link */}
-      <div className="flex gap-2">
-        <Input
-          value={linkInput}
-          onChange={(e) => setLinkInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (linkInput.trim()) addLink(linkInput);
-            }
-          }}
-          placeholder="Paste a Figma, Loom, YouTube or website link"
-          aria-label="Add a link"
-          className="h-10 px-4 text-sm"
-        />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => linkInput.trim() && addLink(linkInput)}
-          disabled={!linkInput.trim()}
-          className="h-10 px-4 text-xs font-semibold cursor-pointer"
-        >
-          Add link
-        </Button>
+      {/* Add a link with live recognition */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-2">
+          <Input
+            value={linkInput}
+            onChange={(e) => setLinkInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (linkInput.trim()) addLink(linkInput);
+              }
+            }}
+            placeholder="Paste a Figma, Loom, YouTube or website link"
+            aria-label="Add a link"
+            className="h-10 px-4 text-sm"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => linkInput.trim() && addLink(linkInput)}
+            disabled={!linkInput.trim()}
+            className="h-10 px-4 text-xs font-semibold cursor-pointer shrink-0"
+          >
+            {linkInput.trim() && inspectLink(linkInput.trim())
+              ? `Attach ${inspectLink(linkInput.trim())!.providerLabel}`
+              : "Add link"}
+          </Button>
+        </div>
+
+        {linkInput.trim() && inspectLink(linkInput.trim()) && (
+          <div className="flex items-center gap-2 rounded-md border border-brand/20 bg-brand/10 px-3 py-1.5 text-xs text-brand animate-in fade-in-0 slide-in-from-top-1 duration-150">
+            <span className="size-1.5 rounded-full bg-brand shrink-0" />
+            <span className="font-semibold">{inspectLink(linkInput.trim())!.providerLabel} recognized:</span>
+            <span className="text-text-muted truncate max-w-sm font-metadata">
+              {inspectLink(linkInput.trim())!.suggestedLabel || inspectLink(linkInput.trim())!.host}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="border-frame flex flex-wrap items-end gap-3 border-t pt-3">
@@ -531,9 +545,9 @@ export function Composer({
             type="button"
             onClick={save}
             disabled={!canSave}
-            className="h-10 px-6 text-sm font-semibold cursor-pointer shadow-sm transition-all duration-150 active:scale-[0.98]"
+            className="h-10 bg-brand hover:bg-brand/90 text-white font-bold px-6 text-sm cursor-pointer shadow-sm transition-all duration-150 active:scale-[0.98]"
           >
-            {pending ? "Saving…" : "Log it"}
+            {pending ? "Saving…" : "Log Work"}
           </Button>
         </div>
       </div>
