@@ -16,6 +16,7 @@ export type SheetEntry = {
   tags: string[];
   author_id: string;
   author_name: string | null;
+  author_department?: string | null;
   assets: SheetAsset[];
 };
 
@@ -145,10 +146,36 @@ export function SheetView({
                           </h3>
                         </div>
 
-                        {showAuthors && entry.author_name && (
-                          <span className="border-frame text-text-muted font-metadata rounded-sm border px-1.5 py-0.5 text-[10px] tracking-[0.08em] uppercase">
-                            {entry.author_name}
-                          </span>
+                        {showAuthors && (entry.author_name || entry.author_department) && (
+                          token ? (
+                            <span className="border-frame/80 bg-elevated/40 text-text-muted font-metadata inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[10px] tracking-[0.04em]">
+                              <span className="size-1.5 rounded-full bg-brand/70 shrink-0" />
+                              <span className="font-medium text-text/90">
+                                {entry.author_name ?? "Teammate"}
+                              </span>
+                              {entry.author_department && (
+                                <span className="text-text-dim text-[9px] uppercase tracking-wider font-mono">
+                                  · {entry.author_department}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <Link
+                              href={`/sheet?who=${encodeURIComponent(entry.author_id)}` as never}
+                              title={`Filter logs by ${entry.author_name ?? "this teammate"}`}
+                              className="border-frame/80 hover:border-brand/60 bg-elevated/40 hover:bg-elevated text-text-muted hover:text-text font-metadata inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[10px] tracking-[0.04em] transition-colors focus-visible:ring-1 focus-visible:ring-brand focus-visible:outline-none cursor-pointer"
+                            >
+                              <span className="size-1.5 rounded-full bg-brand/70 shrink-0" />
+                              <span className="font-medium text-text/90">
+                                {entry.author_name ?? "Teammate"}
+                              </span>
+                              {entry.author_department && (
+                                <span className="text-text-dim text-[9px] uppercase tracking-wider font-mono">
+                                  · {entry.author_department}
+                                </span>
+                              )}
+                            </Link>
+                          )
                         )}
 
                         {entry.tags

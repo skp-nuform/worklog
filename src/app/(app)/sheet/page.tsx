@@ -16,19 +16,31 @@ export default async function SheetPage({ searchParams }: PageProps<"/sheet">) {
   if (!workspace) return null;
 
   const sp = await searchParams;
+  const who = one(sp.who);
+  const dept = one(sp.dept);
+
+  const [people, tags] = await Promise.all([
+    getPeople(workspace.id),
+    getWorkspaceTags(workspace.id),
+  ]);
+
+  let authorIds: string[] | undefined;
+  if (dept) {
+    authorIds = people
+      .filter((p) => p.department?.toLowerCase() === dept.toLowerCase())
+      .map((p) => p.user_id);
+  }
+
   const filters = {
-    authorId: one(sp.who) === "me" ? viewer.id : one(sp.who),
+    authorId: who === "me" ? viewer.id : who,
+    authorIds,
     from: one(sp.from),
     to: one(sp.to),
     tag: one(sp.tag),
     q: one(sp.q),
   };
 
-  const [days, people, tags] = await Promise.all([
-    getSheet(workspace.id, filters),
-    getPeople(workspace.id),
-    getWorkspaceTags(workspace.id),
-  ]);
+  const days = await getSheet(workspace.id, filters);
 
   // Uploaded assets are in a private bucket, so each needs a short-lived
   // signed URL. Signed with the VIEWER's session, so Storage RLS decides.
@@ -39,30 +51,36 @@ export default async function SheetPage({ searchParams }: PageProps<"/sheet">) {
   );
   const signed = await signAssetUrls(paths);
 
+  const peopleMap = new Map(people.map((p) => [p.user_id, p]));
+
   const hydrated = days.map((d) => ({
     workDate: d.workDate,
-    entries: d.entries.map((e) => ({
-      id: e.id,
-      title: e.title,
-      note: e.note,
-      tags: e.tags,
-      author_id: e.author_id,
-      author_name: e.author_name,
-      version: e.version,
-      work_date: d.workDate,
-      assets: e.assets.map((a) => ({
-        id: a.id,
-        kind: a.kind,
-        url: a.url,
-        provider: a.provider,
-        label: a.label,
-        mime_type: a.mime_type,
-        byte_size: a.byte_size,
-        width: a.width,
-        height: a.height,
-        src: a.object_path ? (signed.get(a.object_path) ?? null) : a.url,
-      })),
-    })),
+    entries: d.entries.map((e) => {
+      const person = peopleMap.get(e.author_id);
+      return {
+        id: e.id,
+        title: e.title,
+        note: e.note,
+        tags: e.tags,
+        author_id: e.author_id,
+        author_name: e.author_name || person?.display_name || null,
+        author_department: person?.department || null,
+        version: e.version,
+        work_date: d.workDate,
+        assets: e.assets.map((a) => ({
+          id: a.id,
+          kind: a.kind,
+          url: a.url,
+          provider: a.provider,
+          label: a.label,
+          mime_type: a.mime_type,
+          byte_size: a.byte_size,
+          width: a.width,
+          height: a.height,
+          src: a.object_path ? (signed.get(a.object_path) ?? null) : a.url,
+        })),
+      };
+    }),
   }));
 
   return (
@@ -70,16 +88,18 @@ export default async function SheetPage({ searchParams }: PageProps<"/sheet">) {
       workspaceId={workspace.id}
       workspaceName={workspace.name}
       viewerId={viewer.id}
+      viewerRole={workspace.role}
       days={hydrated}
       people={people}
       tags={tags}
-      activeWho={one(sp.who) ?? null}
+      activeWho={who ?? null}
       activeFilters={{
         q: one(sp.q),
         tag: one(sp.tag),
         from: one(sp.from),
         to: one(sp.to),
-        who: one(sp.who),
+        who,
+        dept,
       }}
     />
   );

@@ -2,14 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Briefcase, Pencil, Trash2, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
 
 import { Composer } from "@/components/sheet/composer";
 import { EditEntryDialog } from "@/components/sheet/edit-entry-dialog";
 import { MonthGrid } from "@/components/sheet/month-grid";
-import { SheetControls, type ActiveFilters } from "@/components/sheet/sheet-controls";
+import { SheetControls, type ActiveFilters, type Person } from "@/components/sheet/sheet-controls";
 import { SheetView, type SheetDay, type SheetEntry } from "@/components/sheet/sheet-view";
 import { ShareDialog } from "@/components/sheet/share-dialog";
 import { TargetDialog } from "@/components/sheet/target-dialog";
@@ -17,17 +17,11 @@ import { WeekStrip } from "@/components/sheet/week-strip";
 import { Button } from "@/components/ui/button";
 import { deleteEntry } from "@/features/sheet/actions";
 
-type Person = {
-  user_id: string;
-  display_name: string;
-  email: string;
-  role: string;
-};
-
 export function SheetClient({
   workspaceId,
   workspaceName,
   viewerId,
+  viewerRole = "member",
   days,
   people,
   tags = [],
@@ -36,6 +30,7 @@ export function SheetClient({
   workspaceId: string;
   workspaceName: string;
   viewerId: string;
+  viewerRole?: "owner" | "admin" | "member" | "guest";
   days: (SheetDay & { entries: (SheetEntry & { version: number })[] })[];
   people: Person[];
   tags?: string[];
@@ -53,14 +48,37 @@ export function SheetClient({
   >(null);
 
   const total = days.reduce((n, d) => n + d.entries.length, 0);
-  const showAuthors = false;
+  const showAuthors = true;
 
   const hasActiveFilters = Boolean(
     activeFilters.q ||
       activeFilters.tag ||
       activeFilters.from ||
-      activeFilters.to,
+      activeFilters.to ||
+      activeFilters.who ||
+      activeFilters.dept,
   );
+
+  const filteredPerson = useMemo(() => {
+    if (!activeFilters.who || activeFilters.who === "me") return null;
+    return people.find((p) => p.user_id === activeFilters.who) ?? null;
+  }, [activeFilters.who, people]);
+
+  const isFilteringMyLogs = activeFilters.who === "me";
+
+  function clearWhoFilter() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("who");
+    const qs = params.toString();
+    router.push((qs ? `/sheet?${qs}` : "/sheet") as never, { scroll: false });
+  }
+
+  function clearDeptFilter() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("dept");
+    const qs = params.toString();
+    router.push((qs ? `/sheet?${qs}` : "/sheet") as never, { scroll: false });
+  }
 
   function remove(entry: SheetEntry) {
     if (
@@ -201,7 +219,78 @@ export function SheetClient({
 
       {viewMode === "sheet" && (
         <div className="flex flex-col gap-6 animate-view-in">
-          {/* Week strip quick navigation with future dates target overlay */}
+          {/* 1. Search & Filter Command Bar (TOP of calendar) */}
+          <SheetControls
+            tags={tags}
+            people={people}
+            viewerId={viewerId}
+            activeFilters={activeFilters}
+          />
+
+          {/* 2. Active Search / Teammate Context Banners (Visual Anchor) */}
+          {filteredPerson && (
+            <div className="flex items-center justify-between rounded-lg border border-brand/40 bg-brand/10 px-4 py-2.5 text-text animate-in fade-in-0 slide-in-from-top-1 duration-150">
+              <div className="flex items-center gap-2.5 text-xs">
+                <div className="flex size-6 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-white uppercase">
+                  {filteredPerson.display_name.slice(0, 1)}
+                </div>
+                <span>
+                  Viewing logs for <strong className="text-text font-semibold">{filteredPerson.display_name}</strong>
+                  {filteredPerson.department ? (
+                    <span className="text-brand ml-1 font-medium">({filteredPerson.department})</span>
+                  ) : null}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearWhoFilter}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-brand/10 transition-colors cursor-pointer"
+              >
+                <X className="size-3.5" />
+                Show All Team
+              </button>
+            </div>
+          )}
+
+          {isFilteringMyLogs && (
+            <div className="flex items-center justify-between rounded-lg border border-brand/30 bg-elevated/80 px-4 py-2 text-text animate-in fade-in-0 duration-150">
+              <div className="flex items-center gap-2 text-xs">
+                <User className="size-4 text-brand" />
+                <span>
+                  Viewing <strong>your own logs only</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearWhoFilter}
+                className="flex items-center gap-1 text-xs font-medium text-brand hover:underline cursor-pointer"
+              >
+                <X className="size-3.5" />
+                Show All Team
+              </button>
+            </div>
+          )}
+
+          {activeFilters.dept && (
+            <div className="flex items-center justify-between rounded-lg border border-frame bg-elevated/70 px-4 py-2 text-text animate-in fade-in-0 duration-150">
+              <div className="flex items-center gap-2 text-xs">
+                <Briefcase className="size-3.5 text-text-muted" />
+                <span>
+                  Department filter: <strong className="text-brand">{activeFilters.dept}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearDeptFilter}
+                className="flex items-center gap-1 text-xs font-medium text-text-muted hover:text-text hover:underline cursor-pointer"
+              >
+                <X className="size-3.5" />
+                Clear department
+              </button>
+            </div>
+          )}
+
+          {/* 3. Week strip calendar quick navigation */}
           <WeekStrip
             days={days}
             selectedDate={selectedWorkDate ?? undefined}
@@ -209,9 +298,7 @@ export function SheetClient({
             onAddTarget={(dateKey) => setTargetDate(dateKey)}
           />
 
-          {/* Search, tag and date controls */}
-          <SheetControls tags={tags} activeFilters={activeFilters} />
-
+          {/* 4. Daily work composer */}
           <Composer
             key={selectedWorkDate ?? "composer"}
             workspaceId={workspaceId}
@@ -219,13 +306,20 @@ export function SheetClient({
             onSaved={() => router.refresh()}
           />
 
+          {/* 5. Day-by-Day Sheet View */}
           <SheetView
             days={days}
             showAuthors={showAuthors}
             allowDownload
             defaultAuthor="Abhishek"
-            actions={(entry) =>
-              entry.author_id === viewerId ? (
+            actions={(entry) => {
+              const isAuthor = entry.author_id === viewerId;
+              const isAdmin = viewerRole === "owner" || viewerRole === "admin";
+              const canEdit = isAuthor || isAdmin;
+
+              if (!canEdit) return null;
+
+              return (
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
@@ -235,7 +329,8 @@ export function SheetClient({
                       )
                     }
                     aria-label={`Edit ${entry.title}`}
-                    className="text-text-muted hover:text-text focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none"
+                    className="text-text-muted hover:text-text focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none cursor-pointer"
+                    title={isAdmin && !isAuthor ? "Admin: Edit entry" : "Edit entry"}
                   >
                     <Pencil aria-hidden="true" className="size-3.5" />
                   </button>
@@ -243,13 +338,14 @@ export function SheetClient({
                     type="button"
                     onClick={() => remove(entry)}
                     aria-label={`Delete ${entry.title}`}
-                    className="text-text-muted hover:text-destructive focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none"
+                    className="text-text-muted hover:text-destructive focus-visible:ring-ring rounded p-1 focus-visible:ring-2 focus-visible:outline-none cursor-pointer"
+                    title={isAdmin && !isAuthor ? "Admin: Delete entry" : "Delete entry"}
                   >
                     <Trash2 aria-hidden="true" className="size-3.5" />
                   </button>
                 </div>
-              ) : null
-            }
+              );
+            }}
             emptyState={
               hasActiveFilters ? (
                 <div className="border-frame flex flex-col items-start gap-3 border border-dashed px-6 py-12">
@@ -258,7 +354,7 @@ export function SheetClient({
                       No entries match your filters
                     </p>
                     <p className="text-text-muted prose-measure text-sm">
-                      We couldn&apos;t find any logged work matching your current search or date criteria.
+                      We couldn&apos;t find any logged work matching your current search or teammate criteria.
                     </p>
                   </div>
                   <Button

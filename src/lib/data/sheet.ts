@@ -47,6 +47,7 @@ export type DayGroup = {
 
 export type SheetFilters = {
   authorId?: string;
+  authorIds?: string[];
   from?: string;
   to?: string;
   tag?: string;
@@ -76,7 +77,12 @@ export async function getSheet(
     .order("created_at", { ascending: true })
     .limit(limitDays * 20);
 
-  if (filters.authorId) query = query.eq("author_id", filters.authorId);
+  if (filters.authorId) {
+    query = query.eq("author_id", filters.authorId);
+  } else if (filters.authorIds) {
+    if (filters.authorIds.length === 0) return [];
+    query = query.in("author_id", filters.authorIds);
+  }
   if (filters.from) query = query.gte("work_date", filters.from);
   if (filters.to) query = query.lte("work_date", filters.to);
   if (filters.tag) query = query.contains("tags", [filters.tag]);
