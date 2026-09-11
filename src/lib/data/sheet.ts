@@ -123,13 +123,13 @@ export async function getPeople(workspaceId: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("workspace_people")
-    .select("user_id, display_name, email, role")
+    .select("user_id, display_name, email, role, department")
     .eq("workspace_id", workspaceId)
     .neq("status", "removed")
     .order("display_name");
   return (
     (data as
-      | { user_id: string; display_name: string; email: string; role: string }[]
+      | { user_id: string; display_name: string; email: string; role: string; department?: string | null }[]
       | null) ?? []
   );
 }

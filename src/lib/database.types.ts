@@ -29,6 +29,7 @@ export type MyProfile = {
   email: string;
   timezone: string;
   theme: "light" | "dark" | "system";
+  department?: string | null;
 };
 
 export type MyWorkspace = {
