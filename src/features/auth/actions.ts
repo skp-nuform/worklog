@@ -1,7 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { isNuformEmail, NUFORM_DOMAIN } from "./domain";
+import {
+  isNuformEmail,
+  NUFORM_DOMAIN,
+  validateAndNormalizeEmail,
+} from "./domain";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sendMagicLinkViaBrevo } from "@/lib/brevo";
@@ -97,14 +101,16 @@ async function ensureCompanyWorkspaceMembership(
  * Check if an email is registered in Supabase Auth.
  */
 export async function checkEmailRegistration(emailInput: string) {
-  const email = emailInput.trim().toLowerCase();
-
-  if (!isNuformEmail(email)) {
+  const result = validateAndNormalizeEmail(emailInput);
+  if (!result.valid) {
     return {
       ok: false,
-      error: `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
+      error:
+        result.error ||
+        `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
     };
   }
+  const email = result.normalizedEmail;
 
   try {
     const service = createServiceClient();
@@ -126,21 +132,20 @@ export async function checkEmailRegistration(emailInput: string) {
 }
 
 /**
- * Instant sign in for existing @nuformsocial.com users.
+ * Instant sign in for @nuformsocial.com users.
+ * Returning users go to /sheet; new users go to /onboarding.
  */
 export async function instantSignIn(emailInput?: string) {
-  const email = emailInput?.trim().toLowerCase() || "";
-
-  if (!email) {
-    return { ok: false, error: "Enter your work email address." };
-  }
-
-  if (!isNuformEmail(email)) {
+  const result = validateAndNormalizeEmail(emailInput);
+  if (!result.valid) {
     return {
       ok: false,
-      error: `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
+      error:
+        result.error ||
+        `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
     };
   }
+  const email = result.normalizedEmail;
 
   try {
     const service = createServiceClient();
@@ -370,18 +375,16 @@ export async function registerNuformUser(data: {
  * This bypasses Supabase's default mailer 2/hour rate limit entirely.
  */
 export async function sendMagicLink(emailInput: string, nextPath?: string) {
-  const email = emailInput?.trim().toLowerCase() || "";
-
-  if (!email) {
-    return { ok: false, error: "Please enter your work email address." };
-  }
-
-  if (!isNuformEmail(email)) {
+  const result = validateAndNormalizeEmail(emailInput);
+  if (!result.valid) {
     return {
       ok: false,
-      error: `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
+      error:
+        result.error ||
+        `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
     };
   }
+  const email = result.normalizedEmail;
 
   try {
     const service = createServiceClient();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -10,16 +10,18 @@ import {
   Loader2,
   Lock,
   Mail,
-  UserPlus,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { instantSignIn, sendMagicLink } from "@/features/auth/actions";
-import { isNuformEmail, NUFORM_DOMAIN } from "@/features/auth/domain";
+import {
+  NUFORM_DOMAIN,
+  NUFORM_HOST,
+  validateAndNormalizeEmail,
+} from "@/features/auth/domain";
 import { safeNextPath } from "@/lib/safe-redirect";
-import { CreateAccountDialog } from "./create-account-dialog";
 
 type State =
   | { kind: "idle" }
@@ -37,27 +39,36 @@ export function LoginForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEmailOtp, setShowEmailOtp] = useState(false);
+  const [urlErrorDismissed, setUrlErrorDismissed] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const linkError = params.get("error");
+  const rawLinkError = params.get("error");
+  const linkError = urlErrorDismissed ? null : rawLinkError;
   const next = safeNextPath(params.get("next"));
 
-  const trimmedEmail = email.trim().toLowerCase();
-  const hasDomainError =
-    trimmedEmail.length > 0 &&
-    trimmedEmail.includes("@") &&
-    !isNuformEmail(trimmedEmail);
-  const isValidNuform = isNuformEmail(trimmedEmail);
+  // Rock-solid email validation & normalization
+  const validation = useMemo(
+    () => validateAndNormalizeEmail(email),
+    [email],
+  );
 
   function handleAuth(e?: React.FormEvent) {
     if (e) e.preventDefault();
-    if (!isValidNuform) return;
+
+    if (!validation.valid) {
+      setState({
+        kind: "error",
+        message:
+          validation.error ||
+          `Only @${NUFORM_HOST} email addresses are allowed.`,
+      });
+      return;
+    }
 
     startTransition(async () => {
       setState({ kind: "sending" });
-      const res = await instantSignIn(trimmedEmail);
+      const res = await instantSignIn(validation.normalizedEmail);
       if (res && !res.ok) {
         setState({ kind: "error", message: res.error });
       }
@@ -67,17 +78,19 @@ export function LoginForm() {
   async function onOtpSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!isValidNuform) {
+    if (!validation.valid) {
       setState({
         kind: "error",
-        message: `Only ${NUFORM_DOMAIN} email addresses are allowed.`,
+        message:
+          validation.error ||
+          `Only @${NUFORM_HOST} email addresses are allowed.`,
       });
       return;
     }
 
     startTransition(async () => {
       setState({ kind: "sending" });
-      const res = await sendMagicLink(trimmedEmail, next);
+      const res = await sendMagicLink(validation.normalizedEmail, next);
       if (!res.ok) {
         setState({
           kind: "error",
@@ -85,7 +98,7 @@ export function LoginForm() {
         });
         return;
       }
-      setState({ kind: "sent", email: trimmedEmail });
+      setState({ kind: "sent", email: validation.normalizedEmail });
     });
   }
 
@@ -97,8 +110,8 @@ export function LoginForm() {
         </h1>
         <p className="text-text-muted">
           A secure sign-in link has been sent to{" "}
-          <span className="text-text font-medium">{state.email}</span>. Click
-          the link in that email to proceed.
+          <span className="text-text font-medium">{state.email}</span> via
+          Brevo. Click the link in that email to proceed.
         </p>
         <p className="text-text-muted text-sm">
           Didn't receive it?{" "}
@@ -139,8 +152,8 @@ export function LoginForm() {
           Sign In
         </h1>
         <p className="text-text-muted text-sm leading-relaxed">
-          Internal workspace access for authorized team members. Returning
-          users land on their sheet; new members enter onboarding.
+          Internal workspace access. Returning teammates land directly on their
+          sheet; new team members are automatically guided to onboarding.
         </p>
       </div>
 
@@ -176,33 +189,59 @@ export function LoginForm() {
             <Input
               id="login-email"
               name="email"
-              type="email"
+              type="text"
               autoComplete="email"
+              autoFocus
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
-                if (state.kind !== "idle") setState({ kind: "idle" });
+                if (!urlErrorDismissed && rawLinkError) {
+                  setUrlErrorDismissed(true);
+                }
+                if (state.kind !== "idle") {
+                  setState({ kind: "idle" });
+                }
               }}
-              placeholder="yourname@nuformsocial.com"
+              placeholder="username or user@nuformsocial.com"
               className={`bg-elevated/50 text-text focus:border-brand ${
-                hasDomainError ? "border-destructive focus:border-destructive" : "border-frame"
+                validation.isExternal
+                  ? "border-destructive focus:border-destructive"
+                  : validation.valid
+                    ? "border-brand/60 focus:border-brand"
+                    : "border-frame"
               }`}
             />
 
-            {/* Validation helper text */}
-            {hasDomainError ? (
-              <p className="text-[11px] text-status-blocked-fg flex items-center gap-1 mt-0.5">
-                <AlertCircle className="size-3 shrink-0" />
-                Only emails ending with <strong>{NUFORM_DOMAIN}</strong> can sign in.
+            {/* Live dynamic validation helper */}
+            {email.trim().length === 0 ? (
+              <p className="text-[11px] text-text-muted">
+                Enter your official work email or username.
               </p>
-            ) : isValidNuform ? (
-              <p className="text-[11px] text-brand flex items-center gap-1 mt-0.5 font-medium">
-                <CheckCircle2 className="size-3 shrink-0" />
-                Verified Nuform domain · Ready to proceed
+            ) : validation.valid ? (
+              <p className="text-[11px] text-brand flex items-center gap-1 mt-0.5 font-medium animate-in fade-in duration-150">
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                <span>
+                  Ready:{" "}
+                  <strong className="text-text font-semibold">
+                    {validation.normalizedEmail}
+                  </strong>
+                  {validation.corrected && (
+                    <span className="text-text-muted font-normal text-[10px] ml-1">
+                      (domain verified)
+                    </span>
+                  )}
+                </span>
+              </p>
+            ) : validation.isExternal ? (
+              <p className="text-[11px] text-status-blocked-fg flex items-center gap-1 mt-0.5 font-medium animate-in fade-in duration-150">
+                <AlertCircle className="size-3.5 shrink-0" />
+                Only @{NUFORM_HOST} email addresses allowed (
+                {validation.domain} is not permitted).
               </p>
             ) : (
-              <p className="text-[11px] text-text-muted">
-                Enter your company email to sign in or start onboarding.
+              <p className="text-[11px] text-text-muted flex items-center gap-1 mt-0.5">
+                Enter your work email (e.g. name@{NUFORM_HOST} or just your
+                username).
               </p>
             )}
           </div>
@@ -210,7 +249,7 @@ export function LoginForm() {
           <Button
             type="submit"
             size="lg"
-            disabled={isPending || state.kind === "sending" || !isValidNuform}
+            disabled={isPending || state.kind === "sending" || !validation.valid}
             className="w-full gap-2 font-medium bg-brand text-white hover:bg-brand-hover cursor-pointer"
           >
             {isPending || state.kind === "sending" ? (
@@ -226,42 +265,15 @@ export function LoginForm() {
             )}
           </Button>
         </form>
-
-        {/* Divider */}
-        <div className="relative my-1 flex items-center justify-center">
-          <div className="border-frame w-full border-t" />
-          <span className="bg-surface text-text-muted px-2.5 text-[11px] font-medium uppercase tracking-wider">
-            First time joining?
-          </span>
-        </div>
-
-        {/* Start Onboarding CTA */}
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          disabled={isPending || state.kind === "sending"}
-          onClick={() => {
-            if (isValidNuform) {
-              handleAuth();
-            } else {
-              setShowCreateModal(true);
-            }
-          }}
-          className="w-full gap-2 border-frame bg-elevated/40 text-text hover:bg-elevated hover:border-brand/50 cursor-pointer font-medium"
-        >
-          <UserPlus className="size-4 text-brand" />
-          {isValidNuform ? "Start Onboarding with This Email" : "New User? Create Account"}
-        </Button>
       </div>
 
-      {/* Security & Access Notice */}
+      {/* Security Notice */}
       <div className="flex items-center justify-center gap-1.5 text-xs text-text-muted">
         <Lock className="size-3 text-text-muted/80" />
-        <span>Restricted to verified @nuformsocial.com team accounts</span>
+        <span>Restricted to authorized @nuformsocial.com team accounts</span>
       </div>
 
-      {/* Alternative magic link email delivery (optional fallback) */}
+      {/* Alternative: Magic Link Email Delivery via Brevo */}
       <div className="border-frame border-t pt-3">
         <button
           type="button"
@@ -271,33 +283,30 @@ export function LoginForm() {
           <Mail className="size-3.5" />
           {showEmailOtp
             ? "Hide email magic link option"
-            : "Alternative: Send email magic link"}
+            : "Alternative: Send email magic link to inbox"}
         </button>
 
         {showEmailOtp && (
-          <form onSubmit={onOtpSubmit} className="mt-3 flex flex-col gap-2.5" noValidate>
+          <form
+            onSubmit={onOtpSubmit}
+            className="mt-3 flex flex-col gap-2.5"
+            noValidate
+          >
             <p className="text-text-muted text-xs">
-              Sends an email with a secure link to your inbox.
+              Sends an email with a secure link to your inbox via Brevo.
             </p>
             <Button
               type="submit"
               variant="secondary"
               size="sm"
-              disabled={state.kind === "sending" || !isValidNuform}
-              className="w-full"
+              disabled={state.kind === "sending" || !validation.valid}
+              className="w-full cursor-pointer"
             >
               {state.kind === "sending" ? "Sending…" : "Send Magic Link Email"}
             </Button>
           </form>
         )}
       </div>
-
-      {/* Modal Dialog for New User Registration */}
-      <CreateAccountDialog
-        open={showCreateModal}
-        initialEmail={isValidNuform ? trimmedEmail : ""}
-        onClose={() => setShowCreateModal(false)}
-      />
     </main>
   );
 }
