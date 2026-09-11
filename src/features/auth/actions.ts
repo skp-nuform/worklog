@@ -148,16 +148,41 @@ export async function instantSignIn(emailInput?: string) {
       return { ok: false, error: listErr.message };
     }
 
-    const existingUser = listData.users?.find(
+    let existingUser = listData.users?.find(
       (u) => u.email?.toLowerCase() === email,
     );
 
+    let isNewUser = false;
+
     if (!existingUser) {
-      return {
-        ok: false,
-        notRegistered: true,
-        error: `No account found for ${email}. Click "Create Account" below to register.`,
-      };
+      // User does not exist yet: create user account in Supabase Auth
+      const { data: createData, error: createErr } =
+        await service.auth.admin.createUser({
+          email,
+          email_confirm: true,
+        });
+
+      if (createErr || !createData.user) {
+        return {
+          ok: false,
+          error: createErr?.message || "Failed to initialize user account.",
+        };
+      }
+      existingUser = createData.user;
+      isNewUser = true;
+    } else {
+      // Check if user has already completed onboarding (active workspace membership)
+      const { data: memberships } = await service
+        .schema("app")
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("user_id", existingUser.id)
+        .eq("status", "active")
+        .limit(1);
+
+      if (!memberships || memberships.length === 0) {
+        isNewUser = true;
+      }
     }
 
     // Generate link and verify OTP to set the cookie session
@@ -183,8 +208,16 @@ export async function instantSignIn(emailInput?: string) {
       return { ok: false, error: verifyErr.message };
     }
 
-    // Ensure company workspace membership
-    await ensureCompanyWorkspaceMembership(service, existingUser.id);
+    // If existing user already has workspace, ensure company workspace access is in sync
+    if (!isNewUser) {
+      await ensureCompanyWorkspaceMembership(service, existingUser.id);
+    }
+
+    if (isNewUser) {
+      redirect("/onboarding");
+    } else {
+      redirect("/sheet");
+    }
   } catch (err) {
     // Propagate Next.js redirect
     if (
@@ -203,8 +236,6 @@ export async function instantSignIn(emailInput?: string) {
           : "Unexpected error during instant sign in",
     };
   }
-
-  redirect("/sheet");
 }
 
 /**

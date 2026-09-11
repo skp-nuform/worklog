@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireViewer } from "@/lib/auth/session";
-import { createClient } from "@/lib/supabase/server";
-import { messageForCode } from "@/lib/validation/errors";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -17,43 +16,138 @@ function field(formData: FormData, key: string): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-/** First-run setup: workspace, owner membership, and the brand labels. */
-export async function bootstrapWorkspace(
+/** Complete first-time user onboarding: name, department, timezone, and workspace enrollment. */
+export async function completeOnboarding(
   formData: FormData,
 ): Promise<ActionResult<{ workspaceId: string }>> {
-  await requireViewer();
+  const viewer = await requireViewer();
 
-  const name = field(formData, "name") ?? "";
   const displayName = field(formData, "displayName") ?? "";
+  const department = field(formData, "department") ?? "Design";
   const timezone = field(formData, "timezone") ?? "Asia/Kolkata";
-  const brands = (field(formData, "brands") ?? "")
-    .split(",")
-    .map((b) => b.trim())
-    .filter(Boolean);
+  const workspaceName = field(formData, "name") ?? "Nuform Social";
 
-  if (name.length < 2) {
+  if (displayName.length < 2) {
     return {
       ok: false,
-      error: "Give the workspace a name of at least two characters.",
-      fieldErrors: { name: ["Enter a workspace name."] },
+      error: "Please enter your full name (at least 2 characters).",
+      fieldErrors: { displayName: ["Enter your full name."] },
     };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("bootstrap_workspace", {
-    p_name: name,
-    p_timezone: timezone,
-    p_brands: brands.length ? brands : ["Newform Tech", "Newform Social"],
-    p_display_name: displayName || null,
-  });
+  try {
+    const service = createServiceClient();
+    const userId = viewer.id;
+    const email = viewer.email ?? "";
 
-  if (error) {
+    // 1. Update app.profiles
+    await service
+      .schema("app")
+      .from("profiles")
+      .upsert(
+        {
+          id: userId,
+          display_name: displayName,
+          email,
+          department,
+          timezone,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+
+    // 2. Check for existing company workspace
+    const { data: workspaces } = await service
+      .schema("app")
+      .from("workspaces")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1);
+
+    let workspaceId = workspaces?.[0]?.id;
+
+    if (!workspaceId) {
+      // First workspace creation
+      const slug =
+        workspaceName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "nuform-social";
+
+      const { data: newWs, error: wsErr } = await service
+        .schema("app")
+        .from("workspaces")
+        .insert({
+          slug,
+          name: workspaceName,
+          owner_id: userId,
+          created_by: userId,
+          updated_by: userId,
+        })
+        .select("id")
+        .single();
+
+      if (wsErr || !newWs) {
+        return {
+          ok: false,
+          error: wsErr?.message || "Failed to create company workspace.",
+        };
+      }
+
+      workspaceId = newWs.id;
+
+      // Add default brands
+      await service.schema("app").from("brands").insert([
+        {
+          workspace_id: workspaceId,
+          name: "Nuform Social",
+          created_by: userId,
+          updated_by: userId,
+        },
+        {
+          workspace_id: workspaceId,
+          name: "Nuform Tech",
+          created_by: userId,
+          updated_by: userId,
+        },
+      ]);
+
+      // Add user as owner
+      await service.schema("app").from("workspace_members").insert({
+        workspace_id: workspaceId,
+        user_id: userId,
+        role: "owner",
+        status: "active",
+        joined_at: new Date().toISOString(),
+      });
+    } else {
+      // Join existing company workspace as active member
+      await service
+        .schema("app")
+        .from("workspace_members")
+        .upsert(
+          {
+            workspace_id: workspaceId,
+            user_id: userId,
+            role: "member",
+            status: "active",
+            joined_at: new Date().toISOString(),
+          },
+          { onConflict: "workspace_id,user_id" },
+        );
+    }
+
+    revalidatePath("/", "layout");
+    return { ok: true, data: { workspaceId } };
+  } catch (err) {
     return {
       ok: false,
-      error: messageForCode(error.code, "Could not create the workspace."),
+      error:
+        err instanceof Error ? err.message : "Failed to complete onboarding.",
     };
   }
-
-  revalidatePath("/", "layout");
-  return { ok: true, data: { workspaceId: data as string } };
 }
+
+// Keep bootstrapWorkspace aliasing completeOnboarding for backward compatibility
+export const bootstrapWorkspace = completeOnboarding;
+

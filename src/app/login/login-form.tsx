@@ -27,7 +27,6 @@ type State =
   | { kind: "idle" }
   | { kind: "sending" }
   | { kind: "sent"; email: string }
-  | { kind: "not_registered"; email: string; message: string }
   | { kind: "error"; message: string };
 
 const ERRORS: Record<string, string> = {
@@ -54,7 +53,7 @@ export function LoginForm() {
     !isNuformEmail(trimmedEmail);
   const isValidNuform = isNuformEmail(trimmedEmail);
 
-  function handleSignIn(e?: React.FormEvent) {
+  function handleAuth(e?: React.FormEvent) {
     if (e) e.preventDefault();
     if (!isValidNuform) return;
 
@@ -62,15 +61,7 @@ export function LoginForm() {
       setState({ kind: "sending" });
       const res = await instantSignIn(trimmedEmail);
       if (res && !res.ok) {
-        if (res.notRegistered) {
-          setState({
-            kind: "not_registered",
-            email: trimmedEmail,
-            message: res.error,
-          });
-        } else {
-          setState({ kind: "error", message: res.error });
-        }
+        setState({ kind: "error", message: res.error });
       }
     });
   }
@@ -155,7 +146,8 @@ export function LoginForm() {
           Sign In
         </h1>
         <p className="text-text-muted text-sm leading-relaxed">
-          Internal workspace access for authorized team members.
+          Internal workspace access for authorized team members. Returning
+          users land on their sheet; new members enter onboarding.
         </p>
       </div>
 
@@ -171,40 +163,9 @@ export function LoginForm() {
         </div>
       )}
 
-      {/* Unregistered email banner guidance */}
-      {state.kind === "not_registered" && (
-        <div
-          role="alert"
-          className="border-brand/40 bg-brand/10 text-text flex flex-col gap-2.5 rounded-lg border p-4 text-sm"
-        >
-          <div className="flex items-start gap-2">
-            <AlertCircle className="size-4 shrink-0 mt-0.5 text-brand" />
-            <div>
-              <p className="font-medium text-text">Account not found yet</p>
-              <p className="text-xs text-text-muted mt-0.5">
-                No active profile for{" "}
-                <span className="text-text font-mono font-medium">
-                  {state.email}
-                </span>
-                . Create your account with your name and department to join.
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-            className="w-full gap-2 bg-brand text-white hover:bg-brand-hover cursor-pointer font-medium mt-1"
-          >
-            <UserPlus className="size-3.5" />
-            Create Account for {state.email}
-          </Button>
-        </div>
-      )}
-
       {/* Sign-in Card */}
       <div className="border-frame bg-surface flex flex-col gap-4 rounded-xl border p-5 shadow-xs">
-        <form onSubmit={handleSignIn} className="flex flex-col gap-3.5" noValidate>
+        <form onSubmit={handleAuth} className="flex flex-col gap-3.5" noValidate>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
               <Label
@@ -244,11 +205,11 @@ export function LoginForm() {
             ) : isValidNuform ? (
               <p className="text-[11px] text-brand flex items-center gap-1 mt-0.5 font-medium">
                 <CheckCircle2 className="size-3 shrink-0" />
-                Verified Nuform domain
+                Verified Nuform domain · Ready to proceed
               </p>
             ) : (
               <p className="text-[11px] text-text-muted">
-                Enter your company email to sign in directly.
+                Enter your company email to sign in or start onboarding.
               </p>
             )}
           </div>
@@ -262,11 +223,11 @@ export function LoginForm() {
             {isPending || state.kind === "sending" ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Signing in…
+                Connecting…
               </>
             ) : (
               <>
-                Sign In
+                Continue with Work Email
                 <ArrowRight className="size-4" />
               </>
             )}
@@ -277,20 +238,27 @@ export function LoginForm() {
         <div className="relative my-1 flex items-center justify-center">
           <div className="border-frame w-full border-t" />
           <span className="bg-surface text-text-muted px-2.5 text-[11px] font-medium uppercase tracking-wider">
-            Or New User?
+            First time joining?
           </span>
         </div>
 
-        {/* Create Account Secondary Button */}
+        {/* Start Onboarding CTA */}
         <Button
           type="button"
           variant="outline"
           size="lg"
-          onClick={() => setShowCreateModal(true)}
+          disabled={isPending || state.kind === "sending"}
+          onClick={() => {
+            if (isValidNuform) {
+              handleAuth();
+            } else {
+              setShowCreateModal(true);
+            }
+          }}
           className="w-full gap-2 border-frame bg-elevated/40 text-text hover:bg-elevated hover:border-brand/50 cursor-pointer font-medium"
         >
           <UserPlus className="size-4 text-brand" />
-          Create Account
+          {isValidNuform ? "Start Onboarding with This Email" : "New User? Create Account"}
         </Button>
       </div>
 
