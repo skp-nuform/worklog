@@ -16,11 +16,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { instantSignIn } from "@/features/auth/actions";
+import { instantSignIn, sendMagicLink } from "@/features/auth/actions";
 import { isNuformEmail, NUFORM_DOMAIN } from "@/features/auth/domain";
 import { safeNextPath } from "@/lib/safe-redirect";
-import { createClient } from "@/lib/supabase/client";
-import { publicEnv } from "@/lib/env";
 import { CreateAccountDialog } from "./create-account-dialog";
 
 type State =
@@ -77,23 +75,18 @@ export function LoginForm() {
       return;
     }
 
-    setState({ kind: "sending" });
-
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email: trimmedEmail,
-      options: {
-        emailRedirectTo:
-          `${publicEnv().NEXT_PUBLIC_SITE_URL}/auth/callback` +
-          `?next=${encodeURIComponent(next)}`,
-      },
+    startTransition(async () => {
+      setState({ kind: "sending" });
+      const res = await sendMagicLink(trimmedEmail, next);
+      if (!res.ok) {
+        setState({
+          kind: "error",
+          message: res.error || "Failed to send magic link email.",
+        });
+        return;
+      }
+      setState({ kind: "sent", email: trimmedEmail });
     });
-
-    if (error) {
-      setState({ kind: "error", message: error.message });
-      return;
-    }
-    setState({ kind: "sent", email: trimmedEmail });
   }
 
   if (state.kind === "sent") {

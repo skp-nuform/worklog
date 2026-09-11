@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { isNuformEmail, NUFORM_DOMAIN } from "./domain";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { sendMagicLinkViaBrevo } from "@/lib/brevo";
+import { safeNextPath } from "@/lib/safe-redirect";
+import { publicEnv } from "@/lib/env";
 
 /**
  * Ensures the given user is an active member of the company workspace.
@@ -361,3 +364,82 @@ export async function registerNuformUser(data: {
 
   redirect("/sheet");
 }
+
+/**
+ * Generates a Supabase magic link and delivers it via Brevo transactional email.
+ * This bypasses Supabase's default mailer 2/hour rate limit entirely.
+ */
+export async function sendMagicLink(emailInput: string, nextPath?: string) {
+  const email = emailInput?.trim().toLowerCase() || "";
+
+  if (!email) {
+    return { ok: false, error: "Please enter your work email address." };
+  }
+
+  if (!isNuformEmail(email)) {
+    return {
+      ok: false,
+      error: `Access restricted: Only ${NUFORM_DOMAIN} email addresses are allowed.`,
+    };
+  }
+
+  try {
+    const service = createServiceClient();
+    const next = safeNextPath(nextPath);
+
+    // 1. Ensure user exists in Supabase Auth (or initialize them)
+    const { data: listData } = await service.auth.admin.listUsers();
+    let user = listData?.users?.find((u) => u.email?.toLowerCase() === email);
+
+    if (!user) {
+      const { data: createData, error: createErr } =
+        await service.auth.admin.createUser({
+          email,
+          email_confirm: true,
+        });
+      if (createErr || !createData.user) {
+        return {
+          ok: false,
+          error: createErr?.message || "Failed to initialize user account.",
+        };
+      }
+      user = createData.user;
+    }
+
+    // 2. Generate magic link token without consuming Supabase email quota
+    const { data: linkData, error: linkErr } =
+      await service.auth.admin.generateLink({
+        type: "magiclink",
+        email,
+      });
+
+    if (linkErr || !linkData.properties?.hashed_token) {
+      return {
+        ok: false,
+        error: linkErr?.message || "Failed to generate sign-in link.",
+      };
+    }
+
+    const origin = publicEnv().NEXT_PUBLIC_SITE_URL;
+    const magicLinkUrl = `${origin}/auth/confirm?token_hash=${linkData.properties.hashed_token}&type=magiclink&next=${encodeURIComponent(next)}`;
+
+    // 3. Send email via Brevo transactional email API
+    await sendMagicLinkViaBrevo({
+      toEmail: email,
+      magicLinkUrl,
+      recipientName: user.user_metadata?.display_name ?? null,
+    });
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[auth] Failed to send magic link via Brevo:", err);
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Failed to send magic link email.",
+    };
+  }
+}
+
